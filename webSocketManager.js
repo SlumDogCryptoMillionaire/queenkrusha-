@@ -1,6 +1,7 @@
 const WebSocket = require('ws');
 const fs = require('fs');
 const path = require('path');
+const { getCurrentTime } = require('./restClient'); // Import getCurrentTime
 
 const BINANCE_WS_URL = 'wss://fstream.binance.com/ws';
 const SYMBOL = 'btcusdt';
@@ -15,7 +16,7 @@ const connectToWebSocket = (ohlcvData, updateVolumes) => {
 
   ws.on('message', (message) => {
     const trade = JSON.parse(message);
-    const tradeTime = trade.T;
+    const tradeTime = getCurrentTime(); // Use synchronized time from Binance
     const price = parseFloat(trade.p);
     const volume = parseFloat(trade.q);
     const isBuyerMaker = trade.m;  // Indicates if the buyer is the market maker
@@ -28,10 +29,10 @@ const connectToWebSocket = (ohlcvData, updateVolumes) => {
         ohlcvData.push(currentCandle);
         if (ohlcvData.length > 1000) ohlcvData.shift();
         fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
-        
+
         // Update volumes after candle close
         updateVolumes(buyVolume, sellVolume);
-        
+
         // Reset buy and sell volumes for the new candle
         buyVolume = 0;
         sellVolume = 0;

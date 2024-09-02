@@ -1,9 +1,42 @@
 const ccxt = require('ccxt');
+const { logInfo, logError } = require('./logger');
 
 // Initialize the Binance exchange object
-const binance = new ccxt.binance({
-  enableRateLimit: true,  // Rate limiting is automatically enabled for exchanges that require it
+const binance = new ccxt.binanceusdm({
+  enableRateLimit: true, // Rate limiting is automatically enabled for exchanges that require it
 });
+
+let timeOffset = 0; // Time difference in milliseconds
+
+// Function to sync with Binance server time
+const syncWithBinanceTime = async () => {
+  try {
+    // Fetch Binance server time
+    const serverTime = await binance.fapiPublicGetTime();
+
+    // Get local time
+    const localTime = Date.now();
+
+    // Calculate time offset
+    timeOffset = serverTime.serverTime - localTime;
+
+    logInfo(`Synchronized with Binance time. Time offset: ${timeOffset} ms`);
+
+  } catch (error) {
+    logError(`Error syncing with Binance time: ${error.message}`);
+  }
+};
+
+// Function to get the current time adjusted with Binance time offset
+const getCurrentTime = () => {
+  return Date.now() + timeOffset;
+};
+
+// Schedule periodic time synchronization (e.g., every 5 minutes)
+setInterval(syncWithBinanceTime, 5 * 60 * 1000); // 5 minutes
+
+// Call the sync function at the start
+syncWithBinanceTime();
 
 // Function to get OHLCV data (Kline/Candlestick data) from Binance using CCXT
 const getOHLCVData = async (symbol, timeframe = '1m', limit = 100) => {
@@ -26,4 +59,4 @@ const getOHLCVData = async (symbol, timeframe = '1m', limit = 100) => {
   }
 };
 
-module.exports = { getOHLCVData };
+module.exports = { getOHLCVData, getCurrentTime };

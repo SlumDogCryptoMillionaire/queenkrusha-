@@ -5,7 +5,7 @@ const { calculateIndicators } = require('./indicators'); // Import indicators
 const { getOhlcvData } = require('./dataManager'); // Import getOhlcvData correctly
 
 let activeTrade = null;
-const TRAILING_STOP_PERCENTAGE = 0.01; // Example: 1% trailing stop
+// const TRAILING_STOP_PERCENTAGE = 0.01; // Example: 1% trailing stop
 
 const enterTrade = (tradeSignal) => {
   if (!tradeSignal || activeTrade) return;  // Do not enter a new trade if there is already an active trade
@@ -19,7 +19,7 @@ const enterTrade = (tradeSignal) => {
     takeProfit,
     symbol,
     entryTime: new Date().toISOString(),
-    trailingStop: null,  // Initialize trailing stop as null
+    // trailingStop: null,  // Initialize trailing stop as null
   };
 
   setActiveTradeStatus(true);  // Mark as having an active trade
@@ -38,6 +38,7 @@ const enterTrade = (tradeSignal) => {
   }
 };
 
+/*
 const updateTrailingStop = (trade, currentPrice) => {
   const { type, trailingStop, stopLoss } = trade;  // Include stopLoss in destructuring
   let newTrailingStop;
@@ -60,6 +61,7 @@ const updateTrailingStop = (trade, currentPrice) => {
     }
   }
 };
+*/
 
 const exitTrade = (exitPrice) => {
   if (!activeTrade) return;
@@ -83,24 +85,24 @@ const manageTrade = (ohlcv, buyVolume, sellVolume) => {
   let shouldExitTrade = false;
 
   if (type === 'short') {
-    updateTrailingStop(activeTrade, price);
+    // updateTrailingStop(activeTrade, price); // Commented out trailing stop logic
 
-    if (price >= stopLoss || price >= activeTrade.trailingStop || sma3Value > sma9Value) {
+    if (price >= stopLoss || /* price >= activeTrade.trailingStop || */ sma3Value > sma9Value) {
       logInfo(`Exiting SHORT trade for ${symbol} at ${price} due to ${
-        price >= stopLoss ? 'stop loss' : (price >= activeTrade.trailingStop ? 'trailing stop' : 'SMA 3 crossing above SMA 9')
+        price >= stopLoss ? 'stop loss' : /* (price >= activeTrade.trailingStop ? 'trailing stop' : */ 'SMA 3 crossing above SMA 9'
       }`);
       shouldExitTrade = true;
     }
   } else if (type === 'long') {
-    updateTrailingStop(activeTrade, price);
+    // updateTrailingStop(activeTrade, price); // Commented out trailing stop logic
 
     // Immediate exit if SMA 3 crosses below SMA 9
     if (sma3Value < sma9Value) {
       logInfo(`Exiting LONG trade for ${symbol} at ${price} due to SMA 3 crossing below SMA 9`);
       shouldExitTrade = true;
-    } else if (price <= stopLoss || price <= activeTrade.trailingStop) {
+    } else if (price <= stopLoss /* || price <= activeTrade.trailingStop */) {
       logInfo(`Exiting LONG trade for ${symbol} at ${price} due to ${
-        price <= stopLoss ? 'stop loss' : 'trailing stop'
+        price <= stopLoss ? 'stop loss' : '' // Removed trailing stop condition
       }`);
       shouldExitTrade = true;
     }
