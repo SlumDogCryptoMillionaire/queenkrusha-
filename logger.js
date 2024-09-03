@@ -1,6 +1,6 @@
-import fs from 'fs'; 
 import { createLogger, format, transports } from 'winston';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 // Simulate __dirname in ES Module
@@ -11,10 +11,12 @@ let logger;  // Declare logger variable
 
 export const initializeLogger = () => {
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
-  const logFilename = path.join(__dirname, 'logs', `tradingbot_log_${timestamp}.log`);
+  const logDir = path.join(__dirname, 'logs');
+  const logFilename = path.join(logDir, `tradingbot_log_${timestamp}.log`);
 
-  if (!fs.existsSync(path.join(__dirname, 'logs'))) {
-    fs.mkdirSync(path.join(__dirname, 'logs'));
+  // Create log directory if it doesn't exist
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir);
   }
 
   logger = createLogger({
@@ -27,12 +29,19 @@ export const initializeLogger = () => {
   });
 };
 
+// Updated logInfo function to handle pretty-printing of JSON
 export const logInfo = (message) => {
   if (!logger) {
     console.error('Logger is not initialized. Call initializeLogger() first.');
     return;
   }
-  logger.info(message);
+
+  if (typeof message === 'object') {
+    // Pretty print JSON objects
+    logger.info(JSON.stringify(message, null, 2));
+  } else {
+    logger.info(message);
+  }
 };
 
 export const logError = (message) => {

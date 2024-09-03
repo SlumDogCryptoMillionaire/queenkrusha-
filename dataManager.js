@@ -22,7 +22,10 @@ export const loadOHLCVData = async (symbol, timeframe = '1m') => {
 
         // Validate and clean the data
         ohlcvData = ohlcvData.filter(candle => validateCandle(candle));
-        
+
+        // Ensure counter is accurate
+        logInfo(`OHLCV file contains ${ohlcvData.length} candles.`);
+
         if (ohlcvData.length === 0) {
           console.warn('No valid OHLCV data in the file. Fetching new data...');
           ohlcvData = await fetchOHLCVData(symbol, timeframe);
@@ -66,6 +69,8 @@ const backfillMissingOHLCVData = async (symbol, timeframe) => {
 
   console.log(`OHLCV data is missing ${candlesNeeded} candles. Fetching missing data...`);
 
+  let totalFetched = 0;  // Initialize counter for total candles fetched
+
   while (candlesNeeded > 0) {
     const candlesToFetch = Math.min(candlesNeeded, 1000);  // Binance API limit of 1000 candles per request
 
@@ -78,11 +83,14 @@ const backfillMissingOHLCVData = async (symbol, timeframe) => {
     
     // Log the number of candles fetched
     logInfo(`Fetched ${fetchedData.length} candles to backfill OHLCV data.`);
+    totalFetched += fetchedData.length;  // Update total fetched counter
 
     // Update the last candle and reduce the remaining candles needed
     lastCandle.openTime = fetchedData[fetchedData.length - 1].openTime;
     candlesNeeded -= candlesToFetch;
   }
+
+  logInfo(`Total candles fetched to backfill OHLCV data: ${totalFetched}`);  // Log total candles fetched
 };
 
 // Function to validate a single candle data

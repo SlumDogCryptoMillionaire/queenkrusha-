@@ -44,7 +44,12 @@ const processTrade = (trade, ohlcvData, updateVolumes) => {
     // Candle is complete, push it to OHLCV data
     ohlcvData.push(currentCandle);
     saveOhlcvData(ohlcvData); // Persist the updated OHLCV data
-    logInfo(`Added new 1-minute candle to OHLCV data: ${JSON.stringify(currentCandle)}`);
+
+    // Use updated logInfo to pretty-print the new candle JSON object
+    logInfo({
+      message: 'Added new 1-minute candle to OHLCV data',
+      candle: currentCandle,
+    });
 
     // Create a new candle for the next minute
     currentCandle = createNewCandle(timestamp, price, volume);
