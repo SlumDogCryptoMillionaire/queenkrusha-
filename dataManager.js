@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchOHLCVData } from './restClient.js';
+import { logInfo, logError } from './logger.js';
 
 // Simulate __dirname in ES Module
 const __filename = fileURLToPath(import.meta.url);
@@ -26,23 +27,62 @@ export const loadOHLCVData = async (symbol, timeframe = '1m') => {
           console.warn('No valid OHLCV data in the file. Fetching new data...');
           ohlcvData = await fetchOHLCVData(symbol, timeframe);
           fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
+          logInfo(`Fetched ${ohlcvData.length} new OHLCV candles for ${symbol}`);
+        } else {
+          // Calculate the number of missing candles
+          await backfillMissingOHLCVData(symbol, timeframe);
         }
 
       } catch (error) {
         console.error('Error parsing OHLCV data from file:', error);
         ohlcvData = await fetchOHLCVData(symbol, timeframe);  // Fetch fresh data if parsing fails
         fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
+        logInfo(`Fetched ${ohlcvData.length} new OHLCV candles for ${symbol}`);
       }
     } else {
       console.log('OHLCV file does not exist. Fetching new data...');
       ohlcvData = await fetchOHLCVData(symbol, timeframe);
       fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
+      logInfo(`Fetched ${ohlcvData.length} new OHLCV candles for ${symbol}`);
     }
   } catch (error) {
     console.error('Error loading OHLCV data:', error);
     ohlcvData = [];  // Reset to an empty array if any error occurs
   }
   return ohlcvData;
+};
+
+// Function to calculate and backfill missing OHLCV data with API limit handling
+const backfillMissingOHLCVData = async (symbol, timeframe) => {
+  const lastCandle = ohlcvData[ohlcvData.length - 1];  // Get the last existing candle
+  const currentTime = Date.now();
+  
+  // Calculate time difference in milliseconds
+  const timeGap = currentTime - lastCandle.openTime;
+  
+  // Calculate the number of candles needed to fill the gap
+  const candleDurationMs = 60000; // 1 minute in milliseconds for '1m' timeframe
+  let candlesNeeded = Math.ceil(timeGap / candleDurationMs);
+
+  console.log(`OHLCV data is missing ${candlesNeeded} candles. Fetching missing data...`);
+
+  while (candlesNeeded > 0) {
+    const candlesToFetch = Math.min(candlesNeeded, 1000);  // Binance API limit of 1000 candles per request
+
+    const fetchedData = await fetchOHLCVData(symbol, timeframe, lastCandle.openTime + candleDurationMs, candlesToFetch);
+    if (fetchedData.length === 0) break;  // Break if no data is fetched, indicating no more data available
+
+    // Append fetched data to existing OHLCV data
+    ohlcvData = [...ohlcvData, ...fetchedData];
+    fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData, null, 2), 'utf-8');
+    
+    // Log the number of candles fetched
+    logInfo(`Fetched ${fetchedData.length} candles to backfill OHLCV data.`);
+
+    // Update the last candle and reduce the remaining candles needed
+    lastCandle.openTime = fetchedData[fetchedData.length - 1].openTime;
+    candlesNeeded -= candlesToFetch;
+  }
 };
 
 // Function to validate a single candle data
@@ -69,4 +109,14 @@ export const getOhlcvData = () => {
     return [];
   }
   return ohlcvData;
+};
+
+// New function to save updated OHLCV data
+export const saveOhlcvData = (data) => {
+  try {
+    fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+    logInfo(`OHLCV data saved to file with ${data.length} candles.`);
+  } catch (error) {
+    console.error('Error saving OHLCV data:', error);
+  }
 };
