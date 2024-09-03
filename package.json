@@ -1,7 +1,8 @@
 {
-  "name": "bot_gen4",
+  "name": "bot_gen45",
   "version": "1.0.0",
   "main": "main.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -10,8 +11,12 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "ccxt": "^4.3.93",
+    "ccxt": "^4.3.94",
     "csv-writer": "^1.6.0",
+    "dotenv": "^16.4.5",
+    "inquirer": "^10.2.0",
+    "install": "^0.13.0",
+    "npm": "^10.8.3",
     "talib": "^1.1.6",
     "winston": "^3.14.2",
     "ws": "^8.18.0"
