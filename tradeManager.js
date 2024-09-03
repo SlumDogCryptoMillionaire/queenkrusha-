@@ -10,11 +10,11 @@ const openTrades = [];
 
 // Function to enter a trade
 export const enterTrade = (tradeType, entryTime, entryPrice) => {
-  // Check if a trade of the same type is already open
-  const existingTrade = openTrades.find(trade => trade.tradeType === tradeType && trade.exitTime === null);
+  // Check if a trade of any type is already open
+  const existingTrade = openTrades.find(trade => trade.exitTime === null);
   
   if (existingTrade) {
-    logInfo(`A ${tradeType} trade is already open for BTC/USDT. Skipping entry.`);
+    logInfo(`A ${existingTrade.tradeType} trade is already open for BTC/USDT. Skipping entry of ${tradeType} trade.`);
     return;  // Do not enter a new trade if one is already open
   }
 
@@ -72,20 +72,24 @@ export const manageTrade = (symbol, price, macdHistValue, sma3Value, sma9Value) 
     const entryTime = new Date().toISOString();
     const tradeType = 'LONG';
 
-    // Check if there's already a pending long trade
-    const existingLongTrade = openTrades.find(trade => trade.tradeType === 'LONG' && trade.exitTime === null);
-    if (!existingLongTrade) {
+    // Check if there's already an open trade
+    const existingTrade = openTrades.find(trade => trade.exitTime === null);
+    if (!existingTrade) {
       enterTrade(tradeType, entryTime, price);  // Ensure correct parameters are passed
+    } else {
+      logInfo(`A ${existingTrade.tradeType} trade is already open for BTC/USDT. Skipping entry of LONG trade.`);
     }
   } else if (macdHistValue < 0 && sma3Value < sma9Value) {
     // Generate a short signal
     const entryTime = new Date().toISOString();
     const tradeType = 'SHORT';
 
-    // Check if there's already a pending short trade
-    const existingShortTrade = openTrades.find(trade => trade.tradeType === 'SHORT' && trade.exitTime === null);
-    if (!existingShortTrade) {
+    // Check if there's already an open trade
+    const existingTrade = openTrades.find(trade => trade.exitTime === null);
+    if (!existingTrade) {
       enterTrade(tradeType, entryTime, price);  // Ensure correct parameters are passed
+    } else {
+      logInfo(`A ${existingTrade.tradeType} trade is already open for BTC/USDT. Skipping entry of SHORT trade.`);
     }
   } else {
     // Exit any existing trades if the conditions change
