@@ -10,15 +10,23 @@ const openTrades = [];
 
 // Function to enter a trade
 export const enterTrade = (tradeType, entryTime, entryPrice) => {
+  // Check if a trade of the same type is already open
+  const existingTrade = openTrades.find(trade => trade.tradeType === tradeType && trade.exitTime === null);
+  
+  if (existingTrade) {
+    logInfo(`A ${tradeType} trade is already open for BTC/USDT. Skipping entry.`);
+    return;  // Do not enter a new trade if one is already open
+  }
+
   // Log entry with correct values
   logInfo(`Entered ${tradeType} trade for BTC/USDT at ${entryPrice}`);
 
   // Create a new trade object
   const newTrade = {
     tradeID: tradeCounter++,
-    tradeType: tradeType,  // Ensure correct trade type is logged
-    entryTime: entryTime,  // Ensure correct entry time is logged
-    entryPrice: entryPrice,  // Ensure correct entry price is logged
+    tradeType: tradeType,
+    entryTime: entryTime,
+    entryPrice: entryPrice,
     exitTime: null,
     exitPrice: null,
     gainLoss: null,
@@ -26,6 +34,9 @@ export const enterTrade = (tradeType, entryTime, entryPrice) => {
 
   // Store the open trade
   openTrades.push(newTrade);
+
+  // Log trade to CSV file
+  logTrade(tradeLogFile, newTrade);  // Ensure the trade is logged to CSV when entered
 };
 
 // Function to exit a trade
