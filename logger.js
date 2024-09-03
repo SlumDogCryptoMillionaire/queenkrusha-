@@ -21,7 +21,19 @@ export const initializeLogger = () => {
 
   logger = createLogger({
     level: 'info',
-    format: format.combine(format.timestamp(), format.json()),
+    format: format.combine(
+      format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),  // Human-readable timestamp
+      format.printf(({ timestamp, message }) => {
+        if (typeof message === 'object') {
+          // If the message is an object, pretty-print it without extra quotation marks or brackets
+          const formattedMessage = Object.entries(message)
+            .map(([key, value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value, null, 2) : value}`)
+            .join('\n');
+          return `${timestamp} - ${formattedMessage}`;
+        }
+        return `${timestamp} - ${message}`;  // Simple string message
+      })
+    ),
     transports: [
       new transports.Console(),
       new transports.File({ filename: logFilename })
@@ -29,19 +41,14 @@ export const initializeLogger = () => {
   });
 };
 
-// Updated logInfo function to handle pretty-printing of JSON
+// Improved logInfo function to handle JSON objects directly and avoid backslashes
 export const logInfo = (message) => {
   if (!logger) {
     console.error('Logger is not initialized. Call initializeLogger() first.');
     return;
   }
 
-  if (typeof message === 'object') {
-    // Pretty print JSON objects
-    logger.info(JSON.stringify(message, null, 2));
-  } else {
-    logger.info(message);
-  }
+  logger.info(message);  // Directly log the object or string message
 };
 
 export const logError = (message) => {

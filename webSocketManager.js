@@ -1,6 +1,6 @@
 import WebSocket from 'ws';
 import { logInfo, logError } from './logger.js';
-import { getOhlcvData, saveOhlcvData } from './dataManager.js';  // Add saveOhlcvData to persist new candles
+import { getOhlcvData, saveOhlcvData } from './dataManager.js';
 
 // Store the latest candle being built
 let currentCandle = null;
@@ -41,15 +41,13 @@ const processTrade = (trade, ohlcvData, updateVolumes) => {
   const candleEndTime = currentCandle.openTime + 60000; // 1-minute candle duration
 
   if (timestamp >= candleEndTime) {
-    // Candle is complete, push it to OHLCV data
-    ohlcvData.push(currentCandle);
-    saveOhlcvData(ohlcvData); // Persist the updated OHLCV data
+    // Ensure no duplicate candles in ohlcvData
+    if (ohlcvData.length === 0 || ohlcvData[ohlcvData.length - 1].openTime !== currentCandle.openTime) {
+      ohlcvData.push(currentCandle);  // Append the completed candle
+      saveOhlcvData(ohlcvData);  // Persist the updated OHLCV data
 
-    // Use updated logInfo to pretty-print the new candle JSON object
-    logInfo({
-      message: 'Added new 1-minute candle to OHLCV data',
-      candle: currentCandle,
-    });
+      logInfo(`Added new 1-minute candle to OHLCV data: Open Time - ${currentCandle.openTime}, Close Price - ${currentCandle.close}`);
+    }
 
     // Create a new candle for the next minute
     currentCandle = createNewCandle(timestamp, price, volume);

@@ -1,74 +1,95 @@
 import { logInfo, logError } from './logger.js';
-import { logTrade } from './tradeLogger.js';
-import { calculateIndicators } from './indicators.js';
-import { getOhlcvData } from './dataManager.js';
+import { logTrade, calculateGainLoss, initializeTradeLogger } from './tradeLogger.js';
 
-let activeTrade = null;  // Track the current active trade
+// Initialize trade logging
+let tradeCounter = 1;  // Counter for unique trade IDs
+const tradeLogFile = initializeTradeLogger();  // Create a new CSV file for each run
 
-// Function to enter a trade based on a trade signal
-export function enterTrade(tradeSignal) {
-  if (!tradeSignal || activeTrade) return;  // Prevent entering a new trade if one is already active
+// Store open trades
+const openTrades = [];
 
-  const { type, entryPrice, symbol } = tradeSignal;
+// Function to enter a trade
+export const enterTrade = (tradeType, entryTime, entryPrice) => {
+  // Log entry with correct values
+  logInfo(`Entered ${tradeType} trade for BTC/USDT at ${entryPrice}`);
 
-  // Define stop loss and take profit levels based on the trade type
-  const stopLoss = type === 'long' ? entryPrice - (entryPrice * 0.01) : entryPrice + (entryPrice * 0.01);  // 1% Stop Loss
-  const takeProfit = type === 'long' ? entryPrice + (entryPrice * 0.01) : entryPrice - (entryPrice * 0.01);  // 1% Take Profit
-
-  activeTrade = {
-    type,
-    entryPrice,
-    stopLoss,
-    takeProfit,
-    symbol,
-    entryTime: new Date().toISOString(),
+  // Create a new trade object
+  const newTrade = {
+    tradeID: tradeCounter++,
+    tradeType: tradeType,  // Ensure correct trade type is logged
+    entryTime: entryTime,  // Ensure correct entry time is logged
+    entryPrice: entryPrice,  // Ensure correct entry price is logged
+    exitTime: null,
+    exitPrice: null,
+    gainLoss: null,
   };
 
-  logInfo(`Entered ${type.toUpperCase()} trade for ${symbol} at ${entryPrice}`);
-  logTrade(activeTrade, 'entry');  // Log trade entry to a CSV file
-}
+  // Store the open trade
+  openTrades.push(newTrade);
+};
 
 // Function to exit a trade
-function exitTrade(exitPrice) {
-  if (!activeTrade) return;
+export const exitTrade = (tradeType, exitTime, exitPrice) => {
+  // Find the last open trade of the same type
+  const openTradeIndex = openTrades.findIndex(trade => trade.tradeType === tradeType && trade.exitTime === null);
+  
+  if (openTradeIndex !== -1) {
+    const openTrade = openTrades[openTradeIndex];
 
-  logInfo(`Exiting ${activeTrade.type.toUpperCase()} trade for ${activeTrade.symbol} at ${exitPrice}`);
-  logTrade(activeTrade, 'exit', exitPrice);  // Log trade exit to a CSV file
-  activeTrade = null;  // Reset active trade
-}
+    // Update trade details with exit information
+    openTrade.exitTime = exitTime;
+    openTrade.exitPrice = exitPrice;
+    openTrade.gainLoss = calculateGainLoss(tradeType, openTrade.entryPrice, exitPrice);
 
-// Function to manage an active trade
-export function manageTrade() {
-  if (!activeTrade) return;  // No active trade to manage
+    // Log the completed trade to the CSV file
+    logTrade(tradeLogFile, openTrade);
 
-  const { type, entryPrice, stopLoss, takeProfit, symbol } = activeTrade;
-  const ohlcvData = getOhlcvData();  // Retrieve OHLCV data for the symbol
+    // Correct log message
+    logInfo(`Exiting ${tradeType} trade for BTC/USDT at ${exitPrice}. Gain/Loss: ${openTrade.gainLoss}`);
 
-  if (ohlcvData.length === 0) {
-    logError('OHLCV data is not loaded. Please load the data first.');
-    return;  // Return early if OHLCV data is not loaded
+    // Remove the trade from open trades
+    openTrades.splice(openTradeIndex, 1);
+  } else {
+    logError(`No open ${tradeType} trade found to exit.`);
   }
+};
 
-  const { sma3, sma9 } = calculateIndicators(ohlcvData);  // Calculate SMA indicators
-  const currentPrice = ohlcvData[ohlcvData.length - 1].close;  // Get the current price
+// Function to check for trade signals and manage trades
+export const manageTrade = (symbol, price, macdHistValue, sma3Value, sma9Value) => {
+  if (macdHistValue > 0 && sma3Value > sma9Value) {
+    // Generate a long signal
+    const entryTime = new Date().toISOString();
+    const tradeType = 'LONG';
 
-  const sma3Value = sma3[sma3.length - 1];
-  const sma9Value = sma9[sma9.length - 1];
-
-  // Determine if we should exit based on stop loss, take profit, or indicator crossing
-  let shouldExit = false;
-  if (type === 'long') {
-    if (currentPrice <= stopLoss || currentPrice >= takeProfit || sma3Value < sma9Value) {
-      shouldExit = true;  // Exit if price reaches stop loss, take profit, or SMA3 < SMA9 for long trade
+    // Check if there's already a pending long trade
+    const existingLongTrade = openTrades.find(trade => trade.tradeType === 'LONG' && trade.exitTime === null);
+    if (!existingLongTrade) {
+      enterTrade(tradeType, entryTime, price);  // Ensure correct parameters are passed
     }
-  } else if (type === 'short') {
-    if (currentPrice >= stopLoss || currentPrice <= takeProfit || sma3Value > sma9Value) {
-      shouldExit = true;  // Exit if price reaches stop loss, take profit, or SMA3 > SMA9 for short trade
+  } else if (macdHistValue < 0 && sma3Value < sma9Value) {
+    // Generate a short signal
+    const entryTime = new Date().toISOString();
+    const tradeType = 'SHORT';
+
+    // Check if there's already a pending short trade
+    const existingShortTrade = openTrades.find(trade => trade.tradeType === 'SHORT' && trade.exitTime === null);
+    if (!existingShortTrade) {
+      enterTrade(tradeType, entryTime, price);  // Ensure correct parameters are passed
+    }
+  } else {
+    // Exit any existing trades if the conditions change
+    const exitTime = new Date().toISOString();
+    
+    // Exit LONG trade if conditions are met
+    const existingLongTrade = openTrades.find(trade => trade.tradeType === 'LONG' && trade.exitTime === null);
+    if (existingLongTrade) {
+      exitTrade('LONG', exitTime, price);  // Ensure correct parameters are passed
+    }
+
+    // Exit SHORT trade if conditions are met
+    const existingShortTrade = openTrades.find(trade => trade.tradeType === 'SHORT' && trade.exitTime === null);
+    if (existingShortTrade) {
+      exitTrade('SHORT', exitTime, price);  // Ensure correct parameters are passed
     }
   }
-
-  // Exit the trade if conditions are met
-  if (shouldExit) {
-    exitTrade(currentPrice);
-  }
-}
+};

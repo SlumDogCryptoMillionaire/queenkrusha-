@@ -55,14 +55,17 @@ async function startBot(config) {
   // Establish WebSocket connection
   connectToWebSocket(ohlcvData, updateVolumes);
 
-  // Periodically analyze the market and manage trades
+// Periodically analyze the market and manage trades
   setInterval(() => {
     const tradeSignal = analyzeMarket(ohlcvData, config.symbol, buyVolume, sellVolume);
     const pendingSignal = getPendingSignal();
+    
     if (pendingSignal) {
-      enterTrade(pendingSignal);
+      // Destructure `pendingSignal` to get the required arguments for `enterTrade`
+      enterTrade(pendingSignal.type, new Date().toISOString(), pendingSignal.entryPrice);
       resetPendingSignal();
     }
+  
     manageTrade(ohlcvData);
   }, 60000);
 

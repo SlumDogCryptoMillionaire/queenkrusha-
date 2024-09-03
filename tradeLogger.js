@@ -1,46 +1,45 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { logInfo, logError } from './logger.js';
 
 // Simulate __dirname in ES Module
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Function to sanitize file names by replacing invalid characters
-const sanitizeFileName = (name) => name.replace(/[\/\\?%*:|"<>]/g, '_');  // Replace invalid characters with '_'
+let tradeLog = [];  // Initialize an array to store trades for each run
+const logDir = path.join(__dirname, 'logs');
 
-// Initialize trade logging
-export const initializeTradeLogger = (symbol) => {
-  const sanitizedSymbol = sanitizeFileName(symbol);  // Sanitize the symbol name
-  const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
-  const logDir = path.join(__dirname, 'logs');
-  const logFilename = path.join(logDir, `trades_${sanitizedSymbol}_${timestamp}.csv`);
-
-  // Create log directory if it doesn't exist
+// Function to initialize the trade logger CSV file
+export const initializeTradeLogger = () => {
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir);
   }
 
-  // Create log file with headers if it doesn't exist
-  if (!fs.existsSync(logFilename)) {
-    const header = 'Timestamp,Type,Symbol,EntryPrice,StopLoss,TakeProfit,Status\n';
-    fs.writeFileSync(logFilename, header);
-  }
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+  const logFilename = path.join(logDir, `trades_log_${timestamp}.csv`);
 
-  return logFilename;  // Return the filename for logging trades
+  // Write the header row to the CSV file
+  fs.writeFileSync(logFilename, 'Trade ID,Trade Type,Entry Time,Entry Price,Exit Time,Exit Price,Gain/Loss\n', 'utf8');
+
+  return logFilename;
 };
 
-// Function to log trades
-export const logTrade = (trade, type, exitPrice = null) => {
-  const timestamp = new Date().toISOString();
-  const logFilename = initializeTradeLogger(trade.symbol);
-  
-  let tradeEntry = '';
-  if (type === 'entry') {
-    tradeEntry = `${timestamp},${trade.type},${trade.symbol},${trade.entryPrice},${trade.stopLoss},${trade.takeProfit},${type}\n`;
-  } else if (type === 'exit' && exitPrice !== null) {
-    tradeEntry = `${timestamp},${trade.type},${trade.symbol},${trade.entryPrice},${trade.stopLoss},${trade.takeProfit},${type},Exit Price: ${exitPrice}\n`;
-  }
+// Function to log a trade to the CSV file
+export const logTrade = (tradeLogFile, trade) => {
+  try {
+    const { tradeID, tradeType, entryTime, entryPrice, exitTime, exitPrice, gainLoss } = trade;
+    const tradeRow = `${tradeID},${tradeType},${entryTime},${entryPrice},${exitTime},${exitPrice},${gainLoss}\n`;
 
-  fs.appendFileSync(logFilename, tradeEntry);
+    fs.appendFileSync(tradeLogFile, tradeRow, 'utf8');  // Append the trade to the CSV file
+
+    logInfo(`Trade logged: ${tradeRow}`);
+  } catch (error) {
+    logError(`Error logging trade: ${error.message}`);
+  }
+};
+
+// Function to calculate gain/loss for a trade
+export const calculateGainLoss = (tradeType, entryPrice, exitPrice) => {
+  return tradeType === 'LONG' ? exitPrice - entryPrice : entryPrice - exitPrice;
 };
