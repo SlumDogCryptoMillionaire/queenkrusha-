@@ -1,70 +1,72 @@
-const WebSocket = require('ws');
-const fs = require('fs');
-const path = require('path');
-const { getCurrentTime } = require('./restClient'); // Import getCurrentTime
+import WebSocket from 'ws';
+import { logInfo, logError } from './logger.js';
 
-const BINANCE_WS_URL = 'wss://fstream.binance.com/ws';
-const SYMBOL = 'btcusdt';
-const OHLCV_FILE_PATH = path.join(__dirname, 'ohlcv_data.json');
+let currentCandles = {};  // Store OHLCV candles keyed by interval
 
-// Function to connect to Binance WebSocket and handle trades
-const connectToWebSocket = (ohlcvData, updateVolumes) => {
-  const ws = new WebSocket(`${BINANCE_WS_URL}/${SYMBOL}@trade`);
-  let currentCandle = {};
-  let buyVolume = 0;  // Track buy volume
-  let sellVolume = 0;  // Track sell volume
+const initializeCandles = (ohlcvData) => {
+  ohlcvData.forEach(candle => {
+    const candleTime = Math.floor(candle.openTime / 60000) * 60000;  // Round down to minute
+    currentCandles[candleTime] = { ...candle };
+  });
+};
 
-  ws.on('message', (message) => {
-    const trade = JSON.parse(message);
-    const tradeTime = getCurrentTime(); // Use synchronized time from Binance
-    const price = parseFloat(trade.p);
-    const volume = parseFloat(trade.q);
-    const isBuyerMaker = trade.m;  // Indicates if the buyer is the market maker
+export const connectToWebSocket = (ohlcvData, updateVolumes) => {
+  initializeCandles(ohlcvData);  // Initialize with existing OHLCV data
 
-    const minute = Math.floor(tradeTime / 60000) * 60000; // Round down to the nearest minute
+  const ws = new WebSocket('wss://fstream.binance.com/ws/btcusdt@trade');  // Public Binance Futures WebSocket stream for BTCUSDT trades
 
-    if (!currentCandle.openTime || currentCandle.openTime !== minute) {
-      if (currentCandle.openTime) {
-        // Push completed candle to ohlcvData and save to file
-        ohlcvData.push(currentCandle);
-        if (ohlcvData.length > 1000) ohlcvData.shift();
-        fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
+  ws.on('open', () => {
+    console.log('WebSocket connection opened.');
+  });
 
-        // Update volumes after candle close
-        updateVolumes(buyVolume, sellVolume);
+  ws.on('message', (data) => {
+    try {
+      const message = typeof data === 'string' ? data : data.toString('utf8');
+      const trade = JSON.parse(message);  // Parse the JSON data
 
-        // Reset buy and sell volumes for the new candle
-        buyVolume = 0;
-        sellVolume = 0;
+      if (trade && trade.e === 'trade' && trade.p && trade.q) {  // Validate trade event and relevant fields
+        //console.log(`Trade: ${trade.s} - ${trade.p} - ${trade.q}`);
+        updateVolumes(Number(trade.p) || 0, Number(trade.q) || 0);  // Ensure numbers are passed
+
+        // Update OHLCV candles with trade data
+        updateCandles(trade);
+      } else {
+        console.warn('Received invalid trade data:', trade);
       }
-
-      // Start new candle
-      currentCandle = {
-        openTime: minute,
-        open: price,
-        high: price,
-        low: price,
-        close: price,
-        volume: volume,
-      };
-    } else {
-      // Update the current candle
-      currentCandle.high = Math.max(currentCandle.high, price);
-      currentCandle.low = Math.min(currentCandle.low, price);
-      currentCandle.close = price;
-      currentCandle.volume += volume;
-    }
-
-    // Update buy and sell volumes
-    if (isBuyerMaker) {
-      sellVolume += volume;  // If buyer is maker, it's a sell
-    } else {
-      buyVolume += volume;  // Otherwise, it's a buy
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
     }
   });
 
-  ws.on('error', (error) => console.error('WebSocket error:', error));
-  ws.on('close', () => console.log('WebSocket connection closed.'));
+  ws.on('close', () => {
+    console.log('WebSocket connection closed.');
+  });
+
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
 };
 
-module.exports = { connectToWebSocket };
+// Function to update OHLCV candles with new trade data
+const updateCandles = (trade) => {
+  const tradeTime = Math.floor(trade.T / 60000) * 60000;  // Round down to minute
+
+  if (!currentCandles[tradeTime]) {
+    // Create a new candle if it doesn't exist
+    currentCandles[tradeTime] = {
+      openTime: tradeTime,
+      open: Number(trade.p),
+      high: Number(trade.p),
+      low: Number(trade.p),
+      close: Number(trade.p),
+      volume: Number(trade.q),
+    };
+  } else {
+    // Update existing candle
+    const candle = currentCandles[tradeTime];
+    candle.high = Math.max(candle.high, Number(trade.p));
+    candle.low = Math.min(candle.low, Number(trade.p));
+    candle.close = Number(trade.p);
+    candle.volume += Number(trade.q);
+  }
+};

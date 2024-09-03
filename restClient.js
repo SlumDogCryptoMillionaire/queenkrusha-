@@ -1,51 +1,53 @@
-const ccxt = require('ccxt');
-const { logInfo, logError } = require('./logger');
+import ccxt from 'ccxt';
+import { logInfo, logError } from './logger.js';
+import fs from 'fs';
+import path from 'path';
 
-// Initialize the Binance exchange object
-const binance = new ccxt.binanceusdm({
-  enableRateLimit: true, // Rate limiting is automatically enabled for exchanges that require it
-});
+let client = null;
 
-let timeOffset = 0; // Time difference in milliseconds
+const OHLCV_FILE_PATH = path.join(process.cwd(), 'ohlcv_data.json');
 
-// Function to sync with Binance server time
-const syncWithBinanceTime = async () => {
+export const initializeRestClient = (exchangeId = 'binanceusdm', options = { enableRateLimit: true }) => {
   try {
-    // Fetch Binance server time
-    const serverTime = await binance.fapiPublicGetTime();
-
-    // Get local time
-    const localTime = Date.now();
-
-    // Calculate time offset
-    timeOffset = serverTime.serverTime - localTime;
-
-    logInfo(`Synchronized with Binance time. Time offset: ${timeOffset} ms`);
-
+    client = new ccxt[exchangeId]({
+      ...options,
+      apiKey: '',
+      secret: '',
+    });
+    logInfo(`Initialized REST client for ${exchangeId}`);
   } catch (error) {
-    logError(`Error syncing with Binance time: ${error.message}`);
+    logError(`Failed to initialize REST client: ${error.message}`);
   }
 };
 
-// Function to get the current time adjusted with Binance time offset
-const getCurrentTime = () => {
-  return Date.now() + timeOffset;
-};
+// Fetch OHLCV data and log the number of candles downloaded and in file
+export const fetchOHLCVData = async (symbol, timeframe, since = undefined) => {
+  if (!client) {
+    logError('REST client not initialized.');
+    return [];
+  }
 
-// Schedule periodic time synchronization (e.g., every 5 minutes)
-setInterval(syncWithBinanceTime, 5 * 60 * 1000); // 5 minutes
-
-// Call the sync function at the start
-syncWithBinanceTime();
-
-// Function to get OHLCV data (Kline/Candlestick data) from Binance using CCXT
-const getOHLCVData = async (symbol, timeframe = '1m', limit = 100) => {
   try {
-    // Fetch OHLCV data from Binance
-    const ohlcv = await binance.fetchOHLCV(symbol, timeframe, undefined, limit);
+    const limit = 1000;
+    const ohlcv = await client.fetchOHLCV(symbol, timeframe, since, limit);
+    logInfo(`Fetched ${ohlcv.length} new OHLCV candles for ${symbol}`);
 
-    // Transform data into readable format
-    return ohlcv.map(candle => ({
+    // Load existing data from file
+    let existingData = [];
+    if (fs.existsSync(OHLCV_FILE_PATH)) {
+      const fileContent = fs.readFileSync(OHLCV_FILE_PATH, 'utf-8');
+      existingData = JSON.parse(fileContent);
+      logInfo(`OHLCV file contains ${existingData.length} candles.`);
+    } else {
+      logInfo('OHLCV file does not exist. Creating new file.');
+    }
+
+    // Merge new data with existing data
+    const mergedData = [...existingData, ...ohlcv].sort((a, b) => a[0] - b[0]);
+
+    // Write merged data back to file
+    fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(mergedData, null, 2), 'utf-8');
+    return mergedData.map(candle => ({
       openTime: candle[0],
       open: candle[1],
       high: candle[2],
@@ -54,9 +56,18 @@ const getOHLCVData = async (symbol, timeframe = '1m', limit = 100) => {
       volume: candle[5],
     }));
   } catch (error) {
-    console.error('Error fetching OHLCV data from Binance using CCXT:', error.message);
-    return null;
+    logError(`Error fetching OHLCV data: ${error.message}`);
+    return [];
   }
 };
 
-module.exports = { getOHLCVData, getCurrentTime };
+// Function to load OHLCV data from local file
+export const loadLocalOHLCVData = () => {
+  if (fs.existsSync(OHLCV_FILE_PATH)) {
+    const fileContent = fs.readFileSync(OHLCV_FILE_PATH, 'utf-8');
+    const data = JSON.parse(fileContent);
+    logInfo(`Loaded ${data.length} OHLCV candles from file.`);
+    return data;
+  }
+  return [];
+};

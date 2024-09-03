@@ -1,77 +1,72 @@
-const ccxt = require('ccxt');
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { fetchOHLCVData } from './restClient.js';
 
-const BINANCE_SYMBOL = 'BTC/USDT';
-const TIMEFRAME = '1m';
+// Simulate __dirname in ES Module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const OHLCV_FILE_PATH = path.join(__dirname, 'ohlcv_data.json');
+let ohlcvData = [];  // Initialize as an empty array
 
-// Initialize Binance Futures Exchange
-const binance = new ccxt.binanceusdm({
-  enableRateLimit: true,
-});
-
-let ohlcvData = []; // Initialize a variable to store OHLCV data
-
-// Fetch historical OHLCV data to maintain at least 1000 candles
-const fetchHistoricalOHLCV = async (since) => {
+// Function to load or fetch OHLCV data
+export const loadOHLCVData = async (symbol, timeframe = '1m') => {
   try {
-    const limit = 1000;
-    const ohlcv = await binance.fetchOHLCV(BINANCE_SYMBOL, TIMEFRAME, since, limit);
-    return ohlcv.map(candle => ({
-      openTime: candle[0],
-      open: candle[1],
-      high: candle[2],
-      low: candle[3],
-      close: candle[4],
-      volume: candle[5],
-    }));
-  } catch (error) {
-    console.error('Error fetching OHLCV data:', error.message);
-    return [];
-  }
-};
+    if (fs.existsSync(OHLCV_FILE_PATH)) {
+      const fileContent = fs.readFileSync(OHLCV_FILE_PATH, 'utf-8');
+      try {
+        ohlcvData = JSON.parse(fileContent);
+        console.log('Loaded OHLCV data from file.');
 
-// Load OHLCV data from file or fetch it if not available
-const loadOHLCVData = async () => {
-  if (fs.existsSync(OHLCV_FILE_PATH)) {
-    const fileContent = fs.readFileSync(OHLCV_FILE_PATH, 'utf-8');
-    ohlcvData = JSON.parse(fileContent);
+        // Validate and clean the data
+        ohlcvData = ohlcvData.filter(candle => validateCandle(candle));
+        
+        if (ohlcvData.length === 0) {
+          console.warn('No valid OHLCV data in the file. Fetching new data...');
+          ohlcvData = await fetchOHLCVData(symbol, timeframe);
+          fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
+        }
 
-    const lastCandleTime = ohlcvData[ohlcvData.length - 1]?.openTime;
-    const timeNow = new Date().getTime();
-
-    // Calculate missing candles to fetch based on time difference
-    const minutesElapsed = Math.floor((timeNow - lastCandleTime) / (60 * 1000));
-    const missingCandles = Math.max(0, 1000 - ohlcvData.length);
-
-    if (minutesElapsed > 0) {
-      const since = lastCandleTime + 60000; // Fetch from the next minute
-      const newCandles = await fetchHistoricalOHLCV(since);
-
-      // Append new candles and keep only the latest 1000
-      ohlcvData = ohlcvData.concat(newCandles).slice(-1000);
+      } catch (error) {
+        console.error('Error parsing OHLCV data from file:', error);
+        ohlcvData = await fetchOHLCVData(symbol, timeframe);  // Fetch fresh data if parsing fails
+        fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
+      }
+    } else {
+      console.log('OHLCV file does not exist. Fetching new data...');
+      ohlcvData = await fetchOHLCVData(symbol, timeframe);
+      fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
     }
-  } else {
-    ohlcvData = await fetchHistoricalOHLCV();
+  } catch (error) {
+    console.error('Error loading OHLCV data:', error);
+    ohlcvData = [];  // Reset to an empty array if any error occurs
   }
-
-  // Save OHLCV data to file
-  fs.writeFileSync(OHLCV_FILE_PATH, JSON.stringify(ohlcvData), 'utf-8');
   return ohlcvData;
 };
 
-// New function to get current OHLCV data
-const getOhlcvData = (symbol) => {
-  // For now, we're just handling one symbol (BTC/USDT) 
-  // but this could be expanded to handle multiple symbols if needed.
-  if (symbol === BINANCE_SYMBOL) {
-    return ohlcvData;
-  }
-  return [];
+// Function to validate a single candle data
+const validateCandle = (candle) => {
+  return (
+    candle &&
+    candle.close !== undefined &&
+    !isNaN(candle.close) &&
+    candle.open !== undefined &&
+    !isNaN(candle.open) &&
+    candle.high !== undefined &&
+    !isNaN(candle.high) &&
+    candle.low !== undefined &&
+    !isNaN(candle.low) &&
+    candle.volume !== undefined &&
+    !isNaN(candle.volume)
+  );
 };
 
-// Load OHLCV data initially
-loadOHLCVData();  // Load data on startup
-
-module.exports = { loadOHLCVData, getOhlcvData }; // Export both functions
+// Function to get OHLCV data
+export const getOhlcvData = () => {
+  if (ohlcvData.length === 0) {
+    console.warn('OHLCV data is not loaded or empty. Returning empty array.');
+    return [];
+  }
+  return ohlcvData;
+};

@@ -1,61 +1,46 @@
-const fs = require('fs');
-const path = require('path');
-const { createObjectCsvWriter } = require('csv-writer');
-const { logInfo, logError } = require('./logger');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-let tradesCsvWriter = null;
+// Simulate __dirname in ES Module
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const initializeTradeLogger = (symbol) => {
+// Function to sanitize file names by replacing invalid characters
+const sanitizeFileName = (name) => name.replace(/[\/\\?%*:|"<>]/g, '_');  // Replace invalid characters with '_'
+
+// Initialize trade logging
+export const initializeTradeLogger = (symbol) => {
+  const sanitizedSymbol = sanitizeFileName(symbol);  // Sanitize the symbol name
   const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
-  const filename = `${symbol.replace('/', '')}_trades_${timestamp}.csv`;
-  const filePath = path.join(__dirname, 'logs', filename);
+  const logDir = path.join(__dirname, 'logs');
+  const logFilename = path.join(logDir, `trades_${sanitizedSymbol}_${timestamp}.csv`);
 
-  // Ensure logs directory exists
-  if (!fs.existsSync(path.join(__dirname, 'logs'))) {
-    fs.mkdirSync(path.join(__dirname, 'logs'));
+  // Create log directory if it doesn't exist
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir);
   }
 
-  tradesCsvWriter = createObjectCsvWriter({
-    path: filePath,
-    header: [
-      { id: 'timestamp', title: 'Timestamp' },
-      { id: 'symbol', title: 'Symbol' },
-      { id: 'type', title: 'Type' },
-      { id: 'action', title: 'Action' }, // Entry or Exit
-      { id: 'price', title: 'Price' },
-      { id: 'stopLoss', title: 'Stop Loss' },
-      { id: 'takeProfit', title: 'Take Profit' },
-      { id: 'result', title: 'Result' },
-    ],
-  });
-
-  logInfo(`Initialized trade logger for ${symbol}`);
-};
-
-const logTrade = async (trade, action, exitPrice = null) => {
-  // Format numeric values to two decimal places
-  const formatToTwoDecimals = (value) => (value !== null && value !== undefined ? parseFloat(value).toFixed(2) : null);
-
-  const result = action === 'exit' ? (trade.type === 'long' ? exitPrice - trade.entryPrice : trade.entryPrice - exitPrice) : null;
-  const tradeData = {
-    timestamp: new Date().toISOString(),
-    symbol: trade.symbol,
-    type: trade.type,
-    action: action,
-    price: formatToTwoDecimals(action === 'entry' ? trade.entryPrice : exitPrice),
-    stopLoss: formatToTwoDecimals(trade.stopLoss),
-    takeProfit: formatToTwoDecimals(trade.takeProfit),
-    result: result !== null ? formatToTwoDecimals(result) : null,
-  };
-
-  try {
-    await tradesCsvWriter.writeRecords([tradeData]);
-    // Log the trade data using console.dir to avoid escape characters and newlines
-    console.log(`Trade ${action} logged:`);
-    console.dir(tradeData, { depth: null, colors: true });  // This will print a well-formatted output to the console
-  } catch (error) {
-    logError('Error writing trade to CSV:', error);
+  // Create log file with headers if it doesn't exist
+  if (!fs.existsSync(logFilename)) {
+    const header = 'Timestamp,Type,Symbol,EntryPrice,StopLoss,TakeProfit,Status\n';
+    fs.writeFileSync(logFilename, header);
   }
+
+  return logFilename;  // Return the filename for logging trades
 };
 
-module.exports = { initializeTradeLogger, logTrade };
+// Function to log trades
+export const logTrade = (trade, type, exitPrice = null) => {
+  const timestamp = new Date().toISOString();
+  const logFilename = initializeTradeLogger(trade.symbol);
+  
+  let tradeEntry = '';
+  if (type === 'entry') {
+    tradeEntry = `${timestamp},${trade.type},${trade.symbol},${trade.entryPrice},${trade.stopLoss},${trade.takeProfit},${type}\n`;
+  } else if (type === 'exit' && exitPrice !== null) {
+    tradeEntry = `${timestamp},${trade.type},${trade.symbol},${trade.entryPrice},${trade.stopLoss},${trade.takeProfit},${type},Exit Price: ${exitPrice}\n`;
+  }
+
+  fs.appendFileSync(logFilename, tradeEntry);
+};

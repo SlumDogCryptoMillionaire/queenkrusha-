@@ -1,68 +1,90 @@
-const { initializeLogger } = require('./logger');
-const { initializeTradeLogger } = require('./tradeLogger');
-const { analyzeMarket, getPendingSignal, resetPendingSignal } = require('./strategy');
-const { enterTrade, manageTrade } = require('./tradeManager');
-const { loadOHLCVData } = require('./dataManager');
-const { connectToWebSocket } = require('./webSocketManager');
-const config = require('./config');
+import 'dotenv/config';  // Load environment variables from .env file
+import { initializeLogger } from './logger.js';
+import { initializeTradeLogger } from './tradeLogger.js';
+import { analyzeMarket, getPendingSignal, resetPendingSignal } from './strategy.js';
+import { enterTrade, manageTrade } from './tradeManager.js';
+import { initializeRestClient, fetchOHLCVData } from './restClient.js';
+import { connectToWebSocket } from './webSocketManager.js';
+import { runMenu } from './tradingMenu.mjs';
+import { loadOHLCVData, getOhlcvData } from './dataManager.js';
 
-let buyVolume = 0;
-let sellVolume = 0;
-
-const updateVolumes = (newBuyVolume, newSellVolume) => {
-  buyVolume = newBuyVolume;
-  sellVolume = newSellVolume;
-  console.log(`Updated volumes - Buy: ${buyVolume.toFixed(2)}, Sell: ${sellVolume.toFixed(2)}`);
+// Default configuration
+const defaultConfig = {
+  exchange: 'binanceusdm',  // Default exchange
+  symbol: 'BTC/USDT',  // Default trading symbol
+  timeframe: '1m',  // Default timeframe
 };
 
-const startBot = async () => {
-  // Initialize loggers with new filenames based on date and time
-  initializeLogger();
+// Function to initialize the trading bot
+async function initializeBot(config) {
+  console.log(`Using configuration: Exchange - ${config.exchange}, Symbol - ${config.symbol}`);
+  
+  // Initialize necessary components
+  initializeLogger();  // Initialize the logger
+  initializeRestClient(config.exchange);  // Initialize REST client
+  initializeTradeLogger(config.symbol);  // Initialize trade logger with sanitized symbol
+  
+  // Load OHLCV data
+  await loadOHLCVData(config.symbol, config.timeframe);
+  const ohlcvData = getOhlcvData();
+  
+  if (ohlcvData.length === 0) {
+    console.error('Failed to load OHLCV data.');
+    return;
+  }
 
-  // Use the correct symbol from config
-  const symbol = config.symbol;
-  initializeTradeLogger(symbol); // Pass the correct symbol
+  return ohlcvData;
+}
 
-  console.log('Starting trading bot...');
+// Function to start the trading bot
+async function startBot(config) {
+  const ohlcvData = await initializeBot(config);  // Initialize the bot and get OHLCV data
+  if (!ohlcvData) return;
 
-  // Load or fetch initial OHLCV data
-  const ohlcvData = await loadOHLCVData();
+  // Define a function to update volumes
+  let buyVolume = 0;
+  let sellVolume = 0;
 
-  // Connect to Binance WebSocket and update OHLCV data in real-time
+  const updateVolumes = (newBuyVolume = 0, newSellVolume = 0) => {  // Add default values
+    buyVolume = newBuyVolume;
+    sellVolume = newSellVolume;
+    // Uncomment if you want to log updated volumes
+    // console.log(`Updated volumes - Buy: ${buyVolume.toFixed(2)}, Sell: ${sellVolume.toFixed(2)}`);
+  };
+
+  // Establish WebSocket connection
   connectToWebSocket(ohlcvData, updateVolumes);
 
-  // Analyze market to generate trade signals and manage trades based on signals
+  // Periodically analyze the market and manage trades
   setInterval(() => {
-    // Analyze the market and generate a signal
-    const tradeSignal = analyzeMarket(ohlcvData, symbol, buyVolume, sellVolume);
-    
-    // Get the most recent indicators
-    const { sma3, sma9, macd } = require('./indicators').calculateIndicators(ohlcvData);
-    const lastCandle = ohlcvData[ohlcvData.length - 1];
-    const price = lastCandle.close;
-    const macdHistValue = macd.histogram[macd.histogram.length - 1];
-    const sma3Value = sma3[sma3.length - 1];
-    const sma9Value = sma9[sma9.length - 1];
-    
-    // Determine if a trade signal was generated
-    const tradeSignalStatus = tradeSignal ? 'Yes' : 'No';
-
-    // Log the status to the console
-    console.log(`Symbol: ${symbol}, Price: ${price}, Trade Signal: ${tradeSignalStatus}, MACD Histogram: ${macdHistValue.toFixed(2)}, SMA 3: ${sma3Value.toFixed(2)}, SMA 9: ${sma9Value.toFixed(2)}, Buy Volume: ${buyVolume.toFixed(2)}, Sell Volume: ${sellVolume.toFixed(2)}`);
-
-    // Check if there's a pending signal to enter the trade after the current candle closes
+    const tradeSignal = analyzeMarket(ohlcvData, config.symbol, buyVolume, sellVolume);
     const pendingSignal = getPendingSignal();
     if (pendingSignal) {
       enterTrade(pendingSignal);
-      resetPendingSignal();  // Reset the pending signal after entering the trade
+      resetPendingSignal();
     }
-
-    // Manage active trades
     manageTrade(ohlcvData);
-  }, 60000); // Check every minute
+  }, 60000);
 
   console.log('Trading bot started and WebSocket connection established.');
-};
+}
 
-// Run the trading bot
-startBot().catch(error => console.error('Error starting bot:', error));
+// Main function to run the app
+async function runApp() {
+  if (process.argv.includes('--trading-menu')) {
+    // Run interactive trading menu to configure the bot
+    try {
+      const config = await runMenu();
+      await startBot(config);
+    } catch (error) {
+      console.error('Error running trading menu:', error);
+    }
+  } else {
+    // No flag provided, use default configuration
+    console.log('No configuration provided. Running with default settings...');
+    await startBot(defaultConfig);
+  }
+}
+
+// Start the application
+runApp().catch((error) => console.error('Error starting bot:', error));

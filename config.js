@@ -1,5 +1,8 @@
-module.exports = {
-    symbol: 'BTC/USDT', // Ensure this is correctly defined
-    timeframe: '1m', // Example timeframe
+const config = {
+    symbol: 'BTC/USDT',  // Default symbol
+    timeframe: '1m',  // Default timeframe
+    exchange: 'binanceusdm',  // Default exchange
   };
+  
+  export default config;
   
